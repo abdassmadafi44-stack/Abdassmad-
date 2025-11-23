@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram-like Gallery</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: #fafafa;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        header {
+            background: #fff;
+            border-bottom: 1px solid #dbdbdb;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        header h1 {
+            font-size: 24px;
+            color: #e1306c;
+        }
+        .nav-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            background: #e1306c;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #c13584;
+        }
+        .container {
+            display: flex;
+            flex: 1;
+        }
+        .sidebar {
+            width: 250px;
+            background: #fff;
+            border-right: 1px solid #dbdbdb;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .sidebar h2 {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+        .upload-section {
+            background: #f8f8f8;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        input[type="file"] {
+            margin: 5px 0;
+            width: 100%;
+        }
+        .main-content {
+            flex: 1;
+            padding: 20px;
+        }
+        .posts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .post {
+            background: #fff;
+            border: 1px solid #dbdbdb;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .post img, .post video {
+            width: 100%;
+            height: 250px;
+            object-fit: cover;
+        }
+        .post-content {
+            padding: 10px;
+        }
+        .post-content p {
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+        .delete-btn {
+            background: #ff4757;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .delete-btn:hover {
+            background: #ff3742;
+        }
+        video {
+            display: block;
+        }
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+            }
+            .sidebar {
+                width: 100%;
+                border-right: none;
+                border-bottom: 1px solid #dbdbdb;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Instagram-like</h1>
+        <div class="nav-buttons">
+            <button onclick="location.reload()">تحديث</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <aside class="sidebar">
+            <div class="upload-section">
+                <h2>إضافة منشور</h2>
+                <input type="file" id="fileInput" accept="image/*,video/*" multiple>
+                <button onclick="uploadFiles()">تحميل من الملفات</button>
+                <hr style="margin: 10px 0;">
+                <button onclick="startCamera()">تشغيل الكاميرا للصور</button>
+                <button onclick="startVideoRecording()">تسجيل فيديو قصير</button>
+                <video id="video" autoplay style="width: 100%; margin-top: 10px;"></video>
+                <canvas id="canvas" style="display: none;"></canvas>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <h2>المنشورات</h2>
+            <div id="postsGrid" class="posts-grid"></div>
+        </main>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const postsGrid = document.getElementById('postsGrid');
+        let stream;
+        let mediaRecorder;
+        let recordedChunks = [];
+
+        // تحميل المنشورات من localStorage عند التحميل
+        window.onload = function() {
+            loadPostsFromStorage();
+        };
+
+        // تحميل الملفات
+        function uploadFiles() {
+            const fileInput = document.getElementById('fileInput');
+            const files = fileInput.files;
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    addPost(e.target.result, file.type.startsWith('video/') ? 'video' : 'image');
+                    savePostsToStorage();
+                };
+                reader.readAsDataURL(file);
+            }
+            fileInput.value = '';
+        }
+
+        // تشغيل الكاميرا للصور
+        function startCamera() {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(function(mediaStream) {
+                    stream = mediaStream;
+                    video.srcObject = mediaStream;
+                    video.style.display = 'block';
+                    setTimeout(() => {
+                        captureImage();
+                        stream.getTracks().forEach(track => track.stop());
+                        video.style.display = 'none';
+                    }, 3000); // التقاط تلقائي بعد 3 ثوانٍ
+                })
+                .catch(err => alert('خطأ في الكاميرا: ' + err.message));
+        }
+
+        // التقاط صورة
+        function captureImage() {
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0);
+            const imageData = canvas.toDataURL('image/png');
+            addPost(imageData, 'image');
+            savePostsToStorage();
+        }
+
+        // تسجيل فيديو قصير
+        function startVideoRecording() {
+            navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+                .then(function(mediaStream) {
+                    stream = mediaStream;
+                    video.srcObject = mediaStream;
+                    video.style.display = 'block';
+                    mediaRecorder = new MediaRecorder(mediaStream);
+                    recordedChunks = [];
+                    mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
+                    mediaRecorder.onstop = () => {
+                        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                        const url = URL.createObjectURL(blob);
+                        addPost(url, 'video');
+                        savePostsToStorage();
+                        stream.getTracks().forEach(track => track.stop());
+                        video.style.display = 'none';
+                    };
+                    mediaRecorder.start();
+                    setTimeout(() => mediaRecorder.stop(), 10000); // تسجيل 10 ثوانٍ
+                })
+                .catch(err => alert('خطأ في التسجيل: ' + err.message));
+        }
+
+        // إضافة منشور
+        function addPost(src, type) {
+            const postDiv = document.createElement('div');
+            postDiv.className = 'post';
+
+            const media = type === 'video' ? document.createElement('video') : document.createElement('img');
+            media.src = src;
+            if (type === 'video') {
+                media.controls = true;
+                media.muted = true;
+            }
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'post-content';
+            contentDiv.innerHTML = `<p>منشور جديد (${type})</p><button class="delete-btn" onclick="deletePost(this)">حذف</button>`;
+
+            postDiv.appendChild(media);
+            postDiv.appendChild(contentDiv);
+            postsGrid.appendChild(postDiv);
+        }
+
+        // حذف منشور
+        function deletePost(btn) {
+            const post = btn.closest('.post');
+            postsGrid.removeChild(post);
+            savePostsToStorage();
+        }
+
+        // حفظ المنشورات في localStorage
+        function savePostsToStorage() {
+            const posts = [];
+            const postElements = postsGrid.querySelectorAll('.post');
+            postElements.forEach(post => {
+                const media = post.querySelector('img, video');
+                posts.push({ src: media.src, type: media.tagName.toLowerCase() });
+            });
+            localStorage.setItem('posts', JSON.stringify(posts));
+        }
+
+        // تحميل المنشورات من localStorage
+        function loadPostsFromStorage() {
+            const storedPosts = JSON.parse(localStorage.getItem('posts') || '[]');
+            storedPosts.forEach(post => addPost(post.src, post.type));
+        }
+    </script>
+</body>
+</html>
